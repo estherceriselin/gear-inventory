@@ -528,52 +528,41 @@ function capturePhoto() {
   var video = document.getElementById("cameraVideo");
   var canvas = document.getElementById("cameraCanvas");
   var vw = video.videoWidth, vh = video.videoHeight;
+  var statusEl = document.getElementById("ocrStatus");
+  if (!vw || !vh) { statusEl.textContent = "Camera not ready — try again."; return; }
 
   // Crop to the same region as the on-screen green guide box (left 10%, top 38%,
-  // width 80%, height 24%), then upscale ~3x so small text reads better.
+  // width 80%, height 24%) and upscale 3x so small text reads better. No colour
+  // manipulation — Tesseract handles raw frames better than over-processed ones.
   var sx = vw * 0.10, sy = vh * 0.38, sw = vw * 0.80, sh = vh * 0.24;
   var scale = 3;
   canvas.width = sw * scale;
   canvas.height = sh * scale;
-  var ctx = canvas.getContext("2d");
-  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-
-  // Grayscale + contrast bump to make engraved/printed serials stand out.
-  var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  var px = img.data;
-  for (var i = 0; i < px.length; i += 4) {
-    var g = px[i] * 0.3 + px[i + 1] * 0.59 + px[i + 2] * 0.11;
-    g = (g - 128) * 1.4 + 128;          // contrast
-    g = g < 0 ? 0 : g > 255 ? 255 : g;
-    px[i] = px[i + 1] = px[i + 2] = g;
-  }
-  ctx.putImageData(img, 0, 0);
+  canvas.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
 
   closeCamera();
-  var statusEl = document.getElementById("ocrStatus");
   document.getElementById("cameraContainer").style.display = "block";
   statusEl.textContent = "Reading serial number...";
   canvas.style.display = "block";
   canvas.style.width = "100%";
   canvas.style.borderRadius = "6px";
 
-  Tesseract.createWorker("eng").then(function(worker) {
-    return worker.setParameters({
-      tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-",
-      tessedit_pageseg_mode: "7"   // treat the crop as a single text line
-    }).then(function() {
-      return worker.recognize(canvas);
-    }).then(function(result) {
-      worker.terminate();
-      var serial = pickSerial(result.data.text || "");
-      if (serial) {
-        document.getElementById("fSerial").value = serial;
-        statusEl.textContent = "Found: " + serial + " — check it's right, edit if needed.";
-      } else {
-        statusEl.textContent = "No text detected. Try again or type manually.";
+  Tesseract.recognize(canvas, "eng", {
+    logger: function(m) {
+      if (m.status === "recognizing text") {
+        statusEl.textContent = "Reading... " + Math.round(m.progress * 100) + "%";
       }
-      canvas.style.display = "none";
-    });
+    }
+  }).then(function(result) {
+    // pickSerial enforces A-Z/0-9/dash and keeps the longest token.
+    var serial = pickSerial(result.data.text || "");
+    if (serial) {
+      document.getElementById("fSerial").value = serial;
+      statusEl.textContent = "Found: " + serial + " — check it's right, edit if needed.";
+    } else {
+      statusEl.textContent = "No text detected. Try again or type manually.";
+    }
+    canvas.style.display = "none";
   }).catch(function(err) {
     statusEl.textContent = "OCR failed: " + err.message;
     canvas.style.display = "none";
