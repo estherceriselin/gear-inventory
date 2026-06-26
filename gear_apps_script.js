@@ -6,7 +6,7 @@ var SHEET_NAME = "Inventory";
 
 // Shared secret. Every request must include this token (?token=... or in the
 // POST body). Change this string if it ever leaks, then update the frontend.
-var SECRET = "o5lHkdGj50ymmYrTJxlVDthtXchHO5qo";
+var SECRET = "PASTE_YOUR_OWN_SECRET_TOKEN_HERE";
 
 function doGet(e) {
   return handleRequest(e);
