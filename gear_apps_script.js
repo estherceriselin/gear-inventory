@@ -4,6 +4,10 @@
 
 var SHEET_NAME = "Inventory";
 
+// Shared secret. Every request must include this token (?token=... or in the
+// POST body). Change this string if it ever leaks, then update the frontend.
+var SECRET = "o5lHkdGj50ymmYrTJxlVDthtXchHO5qo";
+
 function doGet(e) {
   return handleRequest(e);
 }
@@ -14,10 +18,18 @@ function doPost(e) {
 
 function handleRequest(e) {
   var action = (e.parameter && e.parameter.action) || "";
+  var body = {};
 
   if (e.postData) {
-    var body = JSON.parse(e.postData.contents);
+    body = JSON.parse(e.postData.contents);
     action = body.action || action;
+  }
+
+  var token = (e.parameter && e.parameter.token) || body.token || "";
+  if (token !== SECRET) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ error: "unauthorized" }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 
   var result;

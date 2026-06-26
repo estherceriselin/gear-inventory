@@ -182,8 +182,9 @@
 
 <div id="setupBanner" class="setup-banner">
   <h3>Connect to Google Sheets</h3>
-  <p style="font-size:0.9em;color:#ccc;margin-bottom:8px;">Paste your Apps Script web app URL below. See GEAR_README.md for setup steps.</p>
+  <p style="font-size:0.9em;color:#ccc;margin-bottom:8px;">Paste your Apps Script web app URL and access token below. See README for setup steps.</p>
   <input type="text" id="apiUrlInput" placeholder="https://script.google.com/macros/s/xxxxx/exec">
+  <input type="text" id="apiTokenInput" placeholder="Access token">
   <button onclick="saveApiUrl()">Save</button>
 </div>
 
@@ -268,11 +269,14 @@
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 var API_URL = localStorage.getItem("gear_api_url") || "";
+var API_TOKEN = localStorage.getItem("gear_api_token") || "";
 var cameraStream = null;
 var items = [];
 
 function init() {
-  if (!API_URL) {
+  if (!API_URL || !API_TOKEN) {
+    document.getElementById("apiUrlInput").value = API_URL;
+    document.getElementById("apiTokenInput").value = API_TOKEN;
     document.getElementById("setupBanner").style.display = "block";
     return;
   }
@@ -282,9 +286,12 @@ function init() {
 
 function saveApiUrl() {
   var url = document.getElementById("apiUrlInput").value.trim();
-  if (!url) return;
+  var token = document.getElementById("apiTokenInput").value.trim();
+  if (!url || !token) { showStatus("Both URL and token are required.", "error"); return; }
   API_URL = url;
+  API_TOKEN = token;
   localStorage.setItem("gear_api_url", url);
+  localStorage.setItem("gear_api_token", token);
   document.getElementById("setupBanner").style.display = "none";
   loadItems();
 }
@@ -297,6 +304,7 @@ function showStatus(msg, type) {
 }
 
 function apiCall(body) {
+  body.token = API_TOKEN;
   return fetch(API_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain" },
@@ -305,9 +313,13 @@ function apiCall(body) {
 }
 
 function loadItems() {
-  fetch(API_URL + "?action=list")
+  fetch(API_URL + "?action=list&token=" + encodeURIComponent(API_TOKEN))
     .then(function(r) { return r.json(); })
     .then(function(data) {
+      if (data.error) {
+        showStatus("Could not load: " + data.error + ". Check your URL and token.", "error");
+        return;
+      }
       items = data.items || [];
       renderTable();
     })
