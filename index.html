@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gear Inventory</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #10161a;
+    color: #e0e0e0;
+    padding: 20px;
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.4em; margin-bottom: 20px; color: #fff; }
+  .setup-banner {
+    background: #0f1f14;
+    border: 1px solid #8acf96;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+    display: none;
+  }
+  .setup-banner h3 { color: #8acf96; margin-bottom: 8px; }
+  .setup-banner input {
+    width: 100%;
+    padding: 8px;
+    background: #1a1a1a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 0.9em;
+    margin: 8px 0;
+  }
+  .setup-banner button {
+    background: #8acf96;
+    color: #000;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .toolbar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .toolbar input {
+    flex: 1;
+    min-width: 200px;
+    padding: 8px 12px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #fff;
+    font-size: 0.95em;
+  }
+  .toolbar input:focus { outline: none; border-color: #8acf96; }
+  .btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: 500;
+  }
+  .btn-primary { background: #8acf96; color: #000; }
+  .btn-secondary { background: #2a2a2a; color: #e0e0e0; border: 1px solid #444; }
+  .btn-danger { background: #dc2626; color: #fff; }
+  .btn-small { padding: 4px 10px; font-size: 0.8em; }
+  .btn:hover { opacity: 0.85; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+  }
+  th {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid #333;
+    color: #999;
+    font-size: 0.8em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #222;
+    font-size: 0.95em;
+  }
+  tr:hover td { background: #1a1a1a; }
+  .category-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    background: #2a2a2a;
+    color: #aaa;
+  }
+  .code-badge {
+    font-family: monospace;
+    color: #8acf96;
+    font-size: 0.85em;
+  }
+  .actions { white-space: nowrap; }
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 12px;
+    padding: 24px;
+    width: 90%;
+    max-width: 480px;
+  }
+  .modal h2 { font-size: 1.1em; margin-bottom: 16px; }
+  .form-group { margin-bottom: 12px; }
+  .form-group label {
+    display: block;
+    font-size: 0.8em;
+    color: #999;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .form-group input {
+    width: 100%;
+    padding: 8px 10px;
+    background: #10161a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 0.95em;
+  }
+  .form-group input:focus { outline: none; border-color: #8acf96; }
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 16px;
+  }
+  .empty-state {
+    text-align: center;
+    padding: 40px;
+    color: #666;
+  }
+  .export-group { display: flex; gap: 6px; }
+  .status {
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    font-size: 0.9em;
+    display: none;
+  }
+  .status.error { display: block; background: #2a0000; border: 1px solid #dc2626; color: #f87171; }
+  .status.success { display: block; background: #002a00; border: 1px solid #16a34a; color: #4ade80; }
+  .serial-col { font-family: monospace; letter-spacing: 0.03em; }
+  @media (max-width: 600px) {
+    body { padding: 12px; }
+    .toolbar { flex-direction: column; }
+    .export-group { flex-wrap: wrap; }
+    table { font-size: 0.85em; }
+    td, th { padding: 8px 6px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Gear Inventory</h1>
+
+<div id="setupBanner" class="setup-banner">
+  <h3>Connect to Google Sheets</h3>
+  <p style="font-size:0.9em;color:#ccc;margin-bottom:8px;">Paste your Apps Script web app URL below. See GEAR_README.md for setup steps.</p>
+  <input type="text" id="apiUrlInput" placeholder="https://script.google.com/macros/s/xxxxx/exec">
+  <button onclick="saveApiUrl()">Save</button>
+</div>
+
+<div id="statusMsg" class="status"></div>
+
+<div class="toolbar">
+  <input type="text" id="searchBox" placeholder="Search gear..." oninput="renderTable()">
+  <button class="btn btn-primary" onclick="openModal()">+ Add Gear</button>
+  <div class="export-group">
+    <button class="btn btn-secondary btn-small" onclick="exportData('txt')">Export TXT</button>
+    <button class="btn btn-secondary btn-small" onclick="exportData('csv')">Export CSV</button>
+    <button class="btn btn-secondary btn-small" onclick="exportData('pm')">Export PM</button>
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Serial</th>
+      <th>Category</th>
+      <th>PM Code</th>
+      <th>Notes</th>
+      <th>Value</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody id="gearBody"></tbody>
+</table>
+
+<div id="emptyState" class="empty-state" style="display:none;">
+  No gear yet. Click <strong>+ Add Gear</strong> to get started.
+</div>
+
+<div id="modalOverlay" class="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h2 id="modalTitle">Add Gear</h2>
+    <input type="hidden" id="editId">
+    <div class="form-group">
+      <label>Name *</label>
+      <input type="text" id="fName" placeholder="Canon R5">
+    </div>
+    <div class="form-group">
+      <label>Serial Number *</label>
+      <div style="display:flex;gap:6px;">
+        <input type="text" id="fSerial" placeholder="012345678" style="flex:1;">
+        <button type="button" class="btn btn-secondary" onclick="openCamera()" title="Scan serial number">📷 Scan</button>
+      </div>
+    </div>
+    <div id="cameraContainer" style="display:none;margin-bottom:12px;">
+      <video id="cameraVideo" autoplay playsinline style="width:100%;border-radius:6px;background:#000;"></video>
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <button type="button" class="btn btn-primary" onclick="capturePhoto()">Capture</button>
+        <button type="button" class="btn btn-secondary" onclick="closeCamera()">Cancel</button>
+      </div>
+      <canvas id="cameraCanvas" style="display:none;"></canvas>
+      <div id="ocrStatus" style="font-size:0.85em;color:#999;margin-top:6px;"></div>
+    </div>
+    <div class="form-group">
+      <label>Category</label>
+      <input type="text" id="fCategory" placeholder="body, lens, flash, grip...">
+    </div>
+    <div class="form-group">
+      <label>PM Code</label>
+      <input type="text" id="fCode" placeholder="Short code for PhotoMechanic">
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <input type="text" id="fNotes" placeholder="Optional notes">
+    </div>
+    <div class="form-group">
+      <label>Value ($)</label>
+      <input type="number" id="fValue" placeholder="Insurance/replacement value" step="0.01" min="0">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveItem()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+var API_URL = localStorage.getItem("gear_api_url") || "";
+var cameraStream = null;
+var items = [];
+
+function init() {
+  if (!API_URL) {
+    document.getElementById("setupBanner").style.display = "block";
+    return;
+  }
+  document.getElementById("setupBanner").style.display = "none";
+  loadItems();
+}
+
+function saveApiUrl() {
+  var url = document.getElementById("apiUrlInput").value.trim();
+  if (!url) return;
+  API_URL = url;
+  localStorage.setItem("gear_api_url", url);
+  document.getElementById("setupBanner").style.display = "none";
+  loadItems();
+}
+
+function showStatus(msg, type) {
+  var el = document.getElementById("statusMsg");
+  el.textContent = msg;
+  el.className = "status " + type;
+  if (type === "success") setTimeout(function() { el.className = "status"; }, 3000);
+}
+
+function apiCall(body) {
+  return fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: JSON.stringify(body)
+  }).then(function(r) { return r.json(); });
+}
+
+function loadItems() {
+  fetch(API_URL + "?action=list")
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      items = data.items || [];
+      renderTable();
+    })
+    .catch(function(err) {
+      showStatus("Failed to load — check your API URL. " + err.message, "error");
+    });
+}
+
+function renderTable() {
+  var query = document.getElementById("searchBox").value.toLowerCase();
+  var filtered = items;
+  if (query) {
+    filtered = items.filter(function(i) {
+      return (i.name + i.serial + i.category + i.code + i.notes).toLowerCase().indexOf(query) !== -1;
+    });
+  }
+  var tbody = document.getElementById("gearBody");
+  if (filtered.length === 0) {
+    tbody.innerHTML = "";
+    document.getElementById("emptyState").style.display = query ? "none" : "block";
+    return;
+  }
+  document.getElementById("emptyState").style.display = "none";
+  tbody.innerHTML = filtered.map(function(i) {
+    var cat = i.category ? '<span class="category-badge">' + esc(i.category) + '</span>' : '';
+    var code = i.code ? '<span class="code-badge">' + esc(i.code) + '</span>' : '';
+    return '<tr>' +
+      '<td>' + esc(i.name) + '</td>' +
+      '<td class="serial-col">' + esc(i.serial) + '</td>' +
+      '<td>' + cat + '</td>' +
+      '<td>' + code + '</td>' +
+      '<td>' + esc(i.notes || '') + '</td>' +
+      '<td>' + (i.value ? '$' + parseFloat(i.value).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '') + '</td>' +
+      '<td class="actions">' +
+        '<button class="btn btn-secondary btn-small" onclick="openModal(\'' + i.id + '\')">Edit</button> ' +
+        '<button class="btn btn-danger btn-small" onclick="deleteItem(\'' + i.id + '\')">Del</button>' +
+      '</td></tr>';
+  }).join("");
+  var total = filtered.reduce(function(sum, i) { return sum + (parseFloat(i.value) || 0); }, 0);
+  if (total > 0) {
+    var colSpan = 5;
+    tbody.innerHTML += '<tr style="border-top:2px solid #333;font-weight:600;">' +
+      '<td colspan="' + colSpan + '" style="text-align:right;color:#999;">Total Value</td>' +
+      '<td>$' + total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</td>' +
+      '<td></td></tr>';
+  }
+}
+
+function esc(s) {
+  var d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function openModal(id) {
+  document.getElementById("editId").value = id || "";
+  document.getElementById("modalTitle").textContent = id ? "Edit Gear" : "Add Gear";
+  if (id) {
+    var item = items.find(function(i) { return i.id === id; });
+    if (item) {
+      document.getElementById("fName").value = item.name;
+      document.getElementById("fSerial").value = item.serial;
+      document.getElementById("fCategory").value = item.category || "";
+      document.getElementById("fCode").value = item.code || "";
+      document.getElementById("fNotes").value = item.notes || "";
+      document.getElementById("fValue").value = item.value || "";
+    }
+  } else {
+    document.getElementById("fName").value = "";
+    document.getElementById("fSerial").value = "";
+    document.getElementById("fCategory").value = "";
+    document.getElementById("fCode").value = "";
+    document.getElementById("fNotes").value = "";
+    document.getElementById("fValue").value = "";
+  }
+  document.getElementById("modalOverlay").classList.add("active");
+  document.getElementById("fName").focus();
+}
+
+function closeModal() {
+  document.getElementById("modalOverlay").classList.remove("active");
+}
+
+function saveItem() {
+  var id = document.getElementById("editId").value;
+  var name = document.getElementById("fName").value.trim();
+  var serial = document.getElementById("fSerial").value.trim();
+  if (!name || !serial) { showStatus("Name and serial are required.", "error"); return; }
+  var body = {
+    action: id ? "update" : "add",
+    name: name,
+    serial: serial,
+    category: document.getElementById("fCategory").value.trim(),
+    code: document.getElementById("fCode").value.trim(),
+    notes: document.getElementById("fNotes").value.trim(),
+    value: document.getElementById("fValue").value.trim()
+  };
+  if (id) body.id = id;
+  apiCall(body).then(function() {
+    closeModal();
+    showStatus(id ? "Updated." : "Added.", "success");
+    loadItems();
+  }).catch(function(err) { showStatus("Save failed: " + err.message, "error"); });
+}
+
+function deleteItem(id) {
+  var item = items.find(function(i) { return i.id === id; });
+  if (!confirm("Remove " + item.name + "?")) return;
+  apiCall({ action: "delete", id: id }).then(function() {
+    showStatus("Removed.", "success");
+    loadItems();
+  }).catch(function(err) { showStatus("Delete failed: " + err.message, "error"); });
+}
+
+function exportData(fmt) {
+  if (items.length === 0) { showStatus("Nothing to export.", "error"); return; }
+  var content, filename, mime;
+  if (fmt === "txt") {
+    filename = "gear_inventory.txt";
+    mime = "text/plain";
+    var lines = ["Equipment Inventory", ""];
+    items.forEach(function(i) {
+      var line = i.name + "  |  Serial: " + i.serial;
+      if (i.category) line += "  |  " + i.category;
+      if (i.value) line += "  |  $" + parseFloat(i.value).toFixed(2);
+      if (i.notes) line += "  |  " + i.notes;
+      lines.push(line);
+    });
+    var total = items.reduce(function(s, i) { return s + (parseFloat(i.value) || 0); }, 0);
+    if (total > 0) {
+      lines.push("");
+      lines.push("Total Value: $" + total.toFixed(2));
+    }
+    content = lines.join("\n");
+  } else if (fmt === "csv") {
+    filename = "gear_inventory.csv";
+    mime = "text/csv";
+    var rows = [["Name","Serial","Category","PM Code","Notes","Value","Date Added"]];
+    items.forEach(function(i) {
+      rows.push([i.name, i.serial, i.category||"", i.code||"", i.notes||"", i.value||"", i.date_added||""]);
+    });
+    content = rows.map(function(r) {
+      return r.map(function(c) { return '"' + String(c).replace(/"/g,'""') + '"'; }).join(",");
+    }).join("\n");
+  } else if (fmt === "pm") {
+    filename = "gear_serial_codes.txt";
+    mime = "text/plain";
+    var pmItems = items.filter(function(i) { return i.code; });
+    if (pmItems.length === 0) { showStatus("No items have PM codes set.", "error"); return; }
+    content = pmItems.map(function(i) { return i.code + "\t" + i.serial; }).join("\n");
+  }
+  var blob = new Blob([content], { type: mime });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showStatus("Exported " + filename, "success");
+}
+
+function openCamera() {
+  var container = document.getElementById("cameraContainer");
+  var video = document.getElementById("cameraVideo");
+  document.getElementById("ocrStatus").textContent = "";
+  container.style.display = "block";
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+    .then(function(stream) {
+      cameraStream = stream;
+      video.srcObject = stream;
+    })
+    .catch(function(err) {
+      document.getElementById("ocrStatus").textContent = "Camera access denied: " + err.message;
+      container.style.display = "none";
+    });
+}
+
+function closeCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(function(t) { t.stop(); });
+    cameraStream = null;
+  }
+  document.getElementById("cameraContainer").style.display = "none";
+}
+
+function capturePhoto() {
+  var video = document.getElementById("cameraVideo");
+  var canvas = document.getElementById("cameraCanvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  closeCamera();
+  var statusEl = document.getElementById("ocrStatus");
+  var container = document.getElementById("cameraContainer");
+  container.style.display = "block";
+  statusEl.textContent = "Reading serial number...";
+  canvas.style.display = "block";
+  canvas.style.width = "100%";
+  canvas.style.borderRadius = "6px";
+  Tesseract.recognize(canvas, "eng", {
+    logger: function(m) {
+      if (m.status === "recognizing text") {
+        statusEl.textContent = "Reading... " + Math.round(m.progress * 100) + "%";
+      }
+    }
+  }).then(function(result) {
+    var text = result.data.text.trim();
+    var serial = text.replace(/[^a-zA-Z0-9\-]/g, " ").replace(/\s+/g, " ").trim();
+    if (serial) {
+      document.getElementById("fSerial").value = serial;
+      statusEl.textContent = "Found: " + serial + " (edit if needed)";
+    } else {
+      statusEl.textContent = "No text detected. Try again or type manually.";
+    }
+    canvas.style.display = "none";
+  }).catch(function(err) {
+    statusEl.textContent = "OCR failed: " + err.message;
+    canvas.style.display = "none";
+  });
+}
+
+document.addEventListener("keydown", function(e) {
+  if (e.key === "Escape") { closeCamera(); closeModal(); }
+});
+
+init();
+</script>
+</body>
+</html>
