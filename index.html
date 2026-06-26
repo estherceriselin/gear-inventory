@@ -241,7 +241,11 @@
       </div>
     </div>
     <div id="cameraContainer" style="display:none;margin-bottom:12px;">
-      <video id="cameraVideo" autoplay playsinline style="width:100%;border-radius:6px;background:#000;"></video>
+      <div style="position:relative;line-height:0;">
+        <video id="cameraVideo" autoplay playsinline style="width:100%;border-radius:6px;background:#000;"></video>
+        <div id="scanGuide" style="position:absolute;left:10%;top:38%;width:80%;height:24%;border:2px solid #8acf96;border-radius:4px;box-shadow:0 0 0 9999px rgba(0,0,0,0.35);"></div>
+      </div>
+      <p style="font-size:0.8em;color:#999;margin:6px 0 0;">Line the serial up inside the green box, then Capture.</p>
       <div style="display:flex;gap:6px;margin-top:8px;">
         <button type="button" class="btn btn-primary" onclick="capturePhoto()">Capture</button>
         <button type="button" class="btn btn-secondary" onclick="closeCamera()">Cancel</button>
@@ -510,36 +514,66 @@ function closeCamera() {
   document.getElementById("cameraContainer").style.display = "none";
 }
 
+// Pick the most serial-like token: longest run of letters/digits/dashes.
+function pickSerial(text) {
+  var tokens = text.toUpperCase().replace(/[^A-Z0-9\-]/g, " ").split(/\s+/);
+  var best = "";
+  for (var i = 0; i < tokens.length; i++) {
+    if (tokens[i].length > best.length) best = tokens[i];
+  }
+  return best;
+}
+
 function capturePhoto() {
   var video = document.getElementById("cameraVideo");
   var canvas = document.getElementById("cameraCanvas");
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext("2d").drawImage(video, 0, 0);
+  var vw = video.videoWidth, vh = video.videoHeight;
+
+  // Crop to the same region as the on-screen green guide box (left 10%, top 38%,
+  // width 80%, height 24%), then upscale ~3x so small text reads better.
+  var sx = vw * 0.10, sy = vh * 0.38, sw = vw * 0.80, sh = vh * 0.24;
+  var scale = 3;
+  canvas.width = sw * scale;
+  canvas.height = sh * scale;
+  var ctx = canvas.getContext("2d");
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+  // Grayscale + contrast bump to make engraved/printed serials stand out.
+  var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  var px = img.data;
+  for (var i = 0; i < px.length; i += 4) {
+    var g = px[i] * 0.3 + px[i + 1] * 0.59 + px[i + 2] * 0.11;
+    g = (g - 128) * 1.4 + 128;          // contrast
+    g = g < 0 ? 0 : g > 255 ? 255 : g;
+    px[i] = px[i + 1] = px[i + 2] = g;
+  }
+  ctx.putImageData(img, 0, 0);
+
   closeCamera();
   var statusEl = document.getElementById("ocrStatus");
-  var container = document.getElementById("cameraContainer");
-  container.style.display = "block";
+  document.getElementById("cameraContainer").style.display = "block";
   statusEl.textContent = "Reading serial number...";
   canvas.style.display = "block";
   canvas.style.width = "100%";
   canvas.style.borderRadius = "6px";
-  Tesseract.recognize(canvas, "eng", {
-    logger: function(m) {
-      if (m.status === "recognizing text") {
-        statusEl.textContent = "Reading... " + Math.round(m.progress * 100) + "%";
+
+  Tesseract.createWorker("eng").then(function(worker) {
+    return worker.setParameters({
+      tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-",
+      tessedit_pageseg_mode: "7"   // treat the crop as a single text line
+    }).then(function() {
+      return worker.recognize(canvas);
+    }).then(function(result) {
+      worker.terminate();
+      var serial = pickSerial(result.data.text || "");
+      if (serial) {
+        document.getElementById("fSerial").value = serial;
+        statusEl.textContent = "Found: " + serial + " — check it's right, edit if needed.";
+      } else {
+        statusEl.textContent = "No text detected. Try again or type manually.";
       }
-    }
-  }).then(function(result) {
-    var text = result.data.text.trim();
-    var serial = text.replace(/[^a-zA-Z0-9\-]/g, " ").replace(/\s+/g, " ").trim();
-    if (serial) {
-      document.getElementById("fSerial").value = serial;
-      statusEl.textContent = "Found: " + serial + " (edit if needed)";
-    } else {
-      statusEl.textContent = "No text detected. Try again or type manually.";
-    }
-    canvas.style.display = "none";
+      canvas.style.display = "none";
+    });
   }).catch(function(err) {
     statusEl.textContent = "OCR failed: " + err.message;
     canvas.style.display = "none";
