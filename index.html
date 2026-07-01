@@ -322,13 +322,23 @@ function showStatus(msg, type) {
   if (type === "success") setTimeout(function() { el.className = "status"; }, 3000);
 }
 
-function apiCall(body) {
+function apiCall(body, timeoutMs) {
   body.token = API_TOKEN;
+  var controller = ("AbortController" in window) ? new AbortController() : null;
+  var timeoutId = controller ? setTimeout(function() { controller.abort(); }, timeoutMs || 60000) : null;
   return fetch(API_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain" },
-    body: JSON.stringify(body)
-  }).then(function(r) { return r.json(); });
+    body: JSON.stringify(body),
+    signal: controller ? controller.signal : undefined
+  }).then(function(r) {
+    if (timeoutId) clearTimeout(timeoutId);
+    return r.json();
+  }).catch(function(err) {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (err.name === "AbortError") throw new Error("Request timed out. Photo may be too large, or the network dropped.");
+    throw err;
+  });
 }
 
 function loadItems() {
@@ -516,20 +526,25 @@ function saveItem() {
 
   var previousPhotoId = (items.find(function(i) { return i.id === id; }) || {}).photo_id || "";
 
+  var photoStatusEl = document.getElementById("photoStatus");
+  photoStatusEl.style.color = "#999";
+
   // Upload the new photo first (if any), then save the row.
   var photoStep;
   if (pendingPhotoDataUrl) {
-    document.getElementById("photoStatus").textContent = "Uploading photo...";
-    photoStep = apiCall({ action: "upload_photo", data_url: pendingPhotoDataUrl, item_id: id || "new" })
+    var sizeKb = Math.round(pendingPhotoDataUrl.length * 0.75 / 1024);
+    photoStatusEl.textContent = "Uploading photo (" + sizeKb + " KB)...";
+    photoStep = apiCall({ action: "upload_photo", data_url: pendingPhotoDataUrl, item_id: id || "new" }, 120000)
       .then(function(r) {
         if (r && r.photo_id) return r.photo_id;
-        throw new Error(r && r.error ? r.error : "upload failed");
+        throw new Error(r && r.error ? r.error : "upload returned no photo id");
       });
   } else {
     photoStep = Promise.resolve(currentPhotoId);
   }
 
   photoStep.then(function(finalPhotoId) {
+    photoStatusEl.textContent = pendingPhotoDataUrl ? "Photo uploaded, saving row..." : "";
     var body = {
       action: id ? "update" : "add",
       name: name,
@@ -541,8 +556,8 @@ function saveItem() {
       photo_id: finalPhotoId
     };
     if (id) body.id = id;
-    return apiCall(body).then(function() {
-      // If we replaced or removed a photo, clean up the old Drive file.
+    return apiCall(body).then(function(r) {
+      if (r && r.error) throw new Error(r.error);
       if (previousPhotoId && previousPhotoId !== finalPhotoId) {
         apiCall({ action: "delete_photo", photo_id: previousPhotoId }).catch(function() {});
       }
@@ -551,8 +566,10 @@ function saveItem() {
       loadItems();
     });
   }).catch(function(err) {
+    // Surface the error in the modal so it's visible while the modal is open.
+    photoStatusEl.style.color = "#f87171";
+    photoStatusEl.textContent = "Save failed: " + err.message;
     showStatus("Save failed: " + err.message, "error");
-    document.getElementById("photoStatus").textContent = "";
   });
 }
 
