@@ -215,6 +215,7 @@
       <th>PM Code</th>
       <th>Notes</th>
       <th>Value</th>
+      <th>Photo</th>
       <th></th>
     </tr>
   </thead>
@@ -268,6 +269,14 @@
     <div class="form-group">
       <label>Value ($)</label>
       <input type="number" id="fValue" placeholder="Insurance/replacement value" step="0.01" min="0">
+    </div>
+    <div class="form-group">
+      <label>Photo</label>
+      <div id="photoPreview" style="margin-bottom:8px;"></div>
+      <input type="file" id="fPhoto" accept="image/*" capture="environment" style="display:none;" onchange="handlePhotoPick(event)">
+      <button type="button" class="btn btn-secondary" onclick="document.getElementById('fPhoto').click()">Choose / Take Photo</button>
+      <button type="button" id="removePhotoBtn" class="btn btn-danger btn-small" style="display:none;margin-left:6px;" onclick="removePhoto()">Remove</button>
+      <div id="photoStatus" style="font-size:0.85em;color:#999;margin-top:6px;"></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
@@ -363,6 +372,7 @@ function renderTable() {
       '<td>' + code + '</td>' +
       '<td>' + esc(i.notes || '') + '</td>' +
       '<td>' + (i.value ? '$' + parseFloat(i.value).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '') + '</td>' +
+      '<td>' + (i.photo_id ? '<span class="photo-thumb" data-photo-id="' + esc(i.photo_id) + '" style="cursor:pointer;color:#8acf96;">📷</span>' : '') + '</td>' +
       '<td class="actions">' +
         '<button class="btn btn-secondary btn-small" onclick="openModal(\'' + i.id + '\')">Edit</button> ' +
         '<button class="btn btn-danger btn-small" onclick="deleteItem(\'' + i.id + '\')">Del</button>' +
@@ -374,8 +384,12 @@ function renderTable() {
     tbody.innerHTML += '<tr style="border-top:2px solid #333;font-weight:600;">' +
       '<td colspan="' + colSpan + '" style="text-align:right;color:#999;">Total Value</td>' +
       '<td>$' + total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</td>' +
-      '<td></td></tr>';
+      '<td colspan="2"></td></tr>';
   }
+  // Wire up click-to-view for photo thumbs.
+  Array.prototype.forEach.call(document.querySelectorAll(".photo-thumb"), function(el) {
+    el.onclick = function() { viewPhoto(el.getAttribute("data-photo-id")); };
+  });
 }
 
 function esc(s) {
@@ -384,9 +398,19 @@ function esc(s) {
   return d.innerHTML;
 }
 
+// Photo state for the currently open modal.
+// pendingPhotoDataUrl: a newly-picked photo not yet uploaded.
+// currentPhotoId: the Drive file ID currently attached (from the sheet).
+var pendingPhotoDataUrl = null;
+var currentPhotoId = "";
+
 function openModal(id) {
   document.getElementById("editId").value = id || "";
   document.getElementById("modalTitle").textContent = id ? "Edit Gear" : "Add Gear";
+  pendingPhotoDataUrl = null;
+  currentPhotoId = "";
+  document.getElementById("fPhoto").value = "";
+  document.getElementById("photoStatus").textContent = "";
   if (id) {
     var item = items.find(function(i) { return i.id === id; });
     if (item) {
@@ -396,6 +420,9 @@ function openModal(id) {
       document.getElementById("fCode").value = item.code || "";
       document.getElementById("fNotes").value = item.notes || "";
       document.getElementById("fValue").value = item.value || "";
+      currentPhotoId = item.photo_id || "";
+      if (currentPhotoId) loadPhotoPreview(currentPhotoId);
+      else renderPhotoPreview(null);
     }
   } else {
     document.getElementById("fName").value = "";
@@ -404,9 +431,77 @@ function openModal(id) {
     document.getElementById("fCode").value = "";
     document.getElementById("fNotes").value = "";
     document.getElementById("fValue").value = "";
+    renderPhotoPreview(null);
   }
   document.getElementById("modalOverlay").classList.add("active");
   document.getElementById("fName").focus();
+}
+
+function renderPhotoPreview(dataUrlOrNull) {
+  var preview = document.getElementById("photoPreview");
+  var removeBtn = document.getElementById("removePhotoBtn");
+  if (dataUrlOrNull) {
+    preview.innerHTML = '<img src="' + dataUrlOrNull + '" style="max-width:100%;max-height:220px;border-radius:6px;background:#000;">';
+    removeBtn.style.display = "inline-block";
+  } else {
+    preview.innerHTML = '<div style="color:#666;font-size:0.85em;">No photo attached.</div>';
+    removeBtn.style.display = "none";
+  }
+}
+
+function loadPhotoPreview(photoId) {
+  var preview = document.getElementById("photoPreview");
+  preview.innerHTML = '<div style="color:#999;font-size:0.85em;">Loading photo...</div>';
+  fetch(API_URL + "?action=photo&token=" + encodeURIComponent(API_TOKEN) + "&id=" + encodeURIComponent(photoId))
+    .then(function(r) { return r.text(); })
+    .then(function(b64) {
+      if (!b64) { renderPhotoPreview(null); return; }
+      renderPhotoPreview("data:image/jpeg;base64," + b64);
+    })
+    .catch(function() { renderPhotoPreview(null); });
+}
+
+function handlePhotoPick(e) {
+  var file = e.target.files && e.target.files[0];
+  if (!file) return;
+  // Downscale to keep upload under Apps Script's ~50MB request limit and speed things up.
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    var img = new Image();
+    img.onload = function() {
+      var maxDim = 1600;
+      var w = img.width, h = img.height;
+      if (w > maxDim || h > maxDim) {
+        var scale = Math.min(maxDim / w, maxDim / h);
+        w = Math.round(w * scale); h = Math.round(h * scale);
+      }
+      var c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      pendingPhotoDataUrl = c.toDataURL("image/jpeg", 0.85);
+      renderPhotoPreview(pendingPhotoDataUrl);
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function removePhoto() {
+  pendingPhotoDataUrl = null;
+  currentPhotoId = "";
+  document.getElementById("fPhoto").value = "";
+  renderPhotoPreview(null);
+}
+
+function viewPhoto(photoId) {
+  var w = window.open("", "_blank");
+  if (!w) return;
+  w.document.write('<html><head><title>Photo</title><style>body{margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh;}img{max-width:100%;max-height:100vh;}</style></head><body><div style="color:#8acf96;">Loading...</div></body></html>');
+  fetch(API_URL + "?action=photo&token=" + encodeURIComponent(API_TOKEN) + "&id=" + encodeURIComponent(photoId))
+    .then(function(r) { return r.text(); })
+    .then(function(b64) {
+      w.document.body.innerHTML = '<img src="data:image/jpeg;base64,' + b64 + '">';
+    });
 }
 
 function closeModal() {
@@ -418,21 +513,47 @@ function saveItem() {
   var name = document.getElementById("fName").value.trim();
   var serial = document.getElementById("fSerial").value.trim();
   if (!name || !serial) { showStatus("Name and serial are required.", "error"); return; }
-  var body = {
-    action: id ? "update" : "add",
-    name: name,
-    serial: serial,
-    category: document.getElementById("fCategory").value.trim(),
-    code: document.getElementById("fCode").value.trim(),
-    notes: document.getElementById("fNotes").value.trim(),
-    value: document.getElementById("fValue").value.trim()
-  };
-  if (id) body.id = id;
-  apiCall(body).then(function() {
-    closeModal();
-    showStatus(id ? "Updated." : "Added.", "success");
-    loadItems();
-  }).catch(function(err) { showStatus("Save failed: " + err.message, "error"); });
+
+  var previousPhotoId = (items.find(function(i) { return i.id === id; }) || {}).photo_id || "";
+
+  // Upload the new photo first (if any), then save the row.
+  var photoStep;
+  if (pendingPhotoDataUrl) {
+    document.getElementById("photoStatus").textContent = "Uploading photo...";
+    photoStep = apiCall({ action: "upload_photo", data_url: pendingPhotoDataUrl, item_id: id || "new" })
+      .then(function(r) {
+        if (r && r.photo_id) return r.photo_id;
+        throw new Error(r && r.error ? r.error : "upload failed");
+      });
+  } else {
+    photoStep = Promise.resolve(currentPhotoId);
+  }
+
+  photoStep.then(function(finalPhotoId) {
+    var body = {
+      action: id ? "update" : "add",
+      name: name,
+      serial: serial,
+      category: document.getElementById("fCategory").value.trim(),
+      code: document.getElementById("fCode").value.trim(),
+      notes: document.getElementById("fNotes").value.trim(),
+      value: document.getElementById("fValue").value.trim(),
+      photo_id: finalPhotoId
+    };
+    if (id) body.id = id;
+    return apiCall(body).then(function() {
+      // If we replaced or removed a photo, clean up the old Drive file.
+      if (previousPhotoId && previousPhotoId !== finalPhotoId) {
+        apiCall({ action: "delete_photo", photo_id: previousPhotoId }).catch(function() {});
+      }
+      closeModal();
+      showStatus(id ? "Updated." : "Added.", "success");
+      loadItems();
+    });
+  }).catch(function(err) {
+    showStatus("Save failed: " + err.message, "error");
+    document.getElementById("photoStatus").textContent = "";
+  });
 }
 
 function deleteItem(id) {
